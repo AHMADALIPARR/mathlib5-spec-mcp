@@ -7,7 +7,8 @@
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { CallToolRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/schemas.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ARCHITECTURE, AGENT_CAPABILITIES, LAYER_TOOLS, ArchitectureLayer, LayerTool } from './architecture.js';
 
 // MCP Server Configuration
@@ -37,9 +38,39 @@ const RESOURCE_URI = {
 };
 
 // Register all resources
+const AGENT_NAMES = Object.keys(AGENT_CAPABILITIES);
+
+const SYSTEM_TOOLS = [
+  { name: 'get_architecture', description: 'Return the full MATHLIB5 architecture definition as JSON',
+    inputSchema: { type: 'object' as const, properties: {} } },
+  { name: 'get_layer', description: 'Return a single architecture layer by numeric id',
+    inputSchema: { type: 'object' as const, properties: { layer_id: { type: 'number', description: 'Layer id (1-10)' } }, required: ['layer_id'] } },
+  { name: 'list_layers', description: 'List all architecture layers',
+    inputSchema: { type: 'object' as const, properties: {} } },
+  { name: 'list_agents', description: 'List all agents and their roles',
+    inputSchema: { type: 'object' as const, properties: {} } },
+  { name: 'get_agent_capabilities', description: 'Return the capabilities of a named agent',
+    inputSchema: { type: 'object' as const, properties: { agent_name: { type: 'string', enum: AGENT_NAMES, description: 'Agent name' } }, required: ['agent_name'] } },
+  { name: 'get_security_config', description: 'Return the security configuration',
+    inputSchema: { type: 'object' as const, properties: {} } },
+  { name: 'list_tools', description: 'List all layer tools with their layer ids',
+    inputSchema: { type: 'object' as const, properties: {} } },
+];
+
+const AGENT_TOOLS = [
+  { name: 'query_solarium', description: 'Query the Solarium semantic layer',
+    inputSchema: { type: 'object' as const, properties: { query: { type: 'string', description: 'Query text' } }, required: ['query'] } },
+  { name: 'coordinate_swarm', description: 'Activate Nexus swarm coordination',
+    inputSchema: { type: 'object' as const, properties: {
+      task: { type: 'string', description: 'Task description (optional)' },
+      agents: { type: 'array', items: { type: 'string' }, description: 'Agents to involve (optional; default all)' } } } },
+  { name: 'audit_system', description: 'Run a Sentinel system audit',
+    inputSchema: { type: 'object' as const, properties: { scope: { type: 'string', description: 'Audit scope (optional; default full system)' } } } },
+];
+
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
-    tools: LAYER_TOOLS.map(tool => ({
+    tools: [...SYSTEM_TOOLS, ...AGENT_TOOLS, ...LAYER_TOOLS.map(tool => ({
       name: tool.name,
       description: tool.description,
       inputSchema: {
@@ -50,7 +81,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }), {}),
         required: tool.arguments.map(a => a.name)
       }
-    }))
+    }))]
   };
 });
 
@@ -170,7 +201,8 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 // ============================================================================
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+  const { name } = request.params;
+  const args: Record<string, unknown> = request.params.arguments ?? {};
   
   switch (name) {
     // System Introspection
@@ -383,12 +415,13 @@ async function invokeLayerTool(name: string, args: Record<string, unknown>): Pro
 // ============================================================================
 
 // Log server initialization
-console.log(`Initializing ${SERVER_NAME} v${SERVER_VERSION}...`);
-console.log(`Architecture: ${ARCHITECTURE.name} v${ARCHITECTURE.version}`);
-console.log(`Layers: ${ARCHITECTURE.layers.length}`);
-console.log(`Agents: ${Object.keys(ARCHITECTURE.agents).length}`);
-console.log(`Tools: ${LAYER_TOOLS.length}`);
-console.log('MCP Server ready. Waiting for connections...\n');
+console.error(`Initializing ${SERVER_NAME} v${SERVER_VERSION}...`);
+console.error(`Architecture: ${ARCHITECTURE.name} v${ARCHITECTURE.version}`);
+console.error(`Layers: ${ARCHITECTURE.layers.length}`);
+console.error(`Agents: ${Object.keys(ARCHITECTURE.agents).length}`);
+console.error(`Tools: ${LAYER_TOOLS.length}`);
+console.error('MCP Server ready. Waiting for connections...\n');
 
 // Start the server
-await server.connect();
+const transport = new StdioServerTransport();
+await server.connect(transport);

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "MCP Server for MATHLIB5 Meta-Architecture - Bridges kernels and engines to AI",
   "main": "dist/index.js",
+  "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
